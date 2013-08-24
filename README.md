@@ -5,6 +5,11 @@ Example app to help people get started using the
 [java-openstack-sdk](https://github.com/https://github.com/woorea/openstack-java-sdk) Java binding
 for the OpenStack APIs.
 
+All it does is probe an OpenStack using admin user credentials and a pointer to the Keystone API,
+then print out a bunch of OpenStack objects and fields.  Note that the default keystone port 5000
+doesn't allow many admin functions, so you will want to point to port 35357 (the Keystone Admin API
+port).
+
 I recommend running the app against a local [DevStack](http://devstack.org) instance of OpenStack where you can play and do
 no harm (though the app currently only reads from the API).
 
@@ -24,6 +29,17 @@ example:
 
     java -jar target/java-openstack-sdk-cli-example-*-with-dependencies.jar -a
     http://192.168.27.100:35357/v2.0/
+
+Arguments include:
+
+ * `-a` or `--api` for Keystone Admin API endpoint (e.g. `http://192.168.27.100:35357/v2.0/`)
+ * `-u` or `--user` for Keystone username with admin privileges (defaults to `admin`)
+ * `-t` or `--tenant` for the Tenant name that the user is logging into (defaults to `admin`)
+ * `-p` or `--password` for the user's password (defaults to `password`)
+ 
+For example:
+    java -jar target/java-openstack-sdk-cli-example-*-with-dependencies.jar -a
+    http://10.11.12.13:35357/v2.0/ -u myuser -t mytenant -p mypassword
 
 You can also run `mvn exec:java` to run the app.  The default config settings will work with
 [DevstackUp](https://github.com/jogo/DevstackUp).
