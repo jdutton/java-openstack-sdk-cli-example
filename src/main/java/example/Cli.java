@@ -12,6 +12,9 @@ import com.woorea.openstack.base.client.OpenStackClientConnector;
 import com.woorea.openstack.base.client.OpenStackRequest;
 import com.woorea.openstack.base.client.OpenStackResponseException;
 import com.woorea.openstack.base.client.OpenStackSimpleTokenProvider;
+import com.woorea.openstack.glance.Glance;
+import com.woorea.openstack.glance.model.Image;
+import com.woorea.openstack.glance.model.Images;
 //import com.woorea.openstack.connector.JerseyConnector; // Override to ignore unknown JSON properties
 import com.woorea.openstack.keystone.Keystone;
 import com.woorea.openstack.keystone.model.Access;
@@ -29,6 +32,8 @@ import com.woorea.openstack.keystone.model.authentication.UsernamePassword;
 import com.woorea.openstack.keystone.utils.KeystoneUtils;
 import com.woorea.openstack.nova.Nova;
 import com.woorea.openstack.nova.api.extensions.HostsExtension;
+import com.woorea.openstack.nova.model.Flavor;
+import com.woorea.openstack.nova.model.Flavors;
 import com.woorea.openstack.nova.model.Hosts;
 import com.woorea.openstack.nova.model.Hosts.Host;
 import com.woorea.openstack.nova.model.Server;
@@ -60,6 +65,12 @@ public class Cli
 	 * 
 	 */
 	private String apiEndpoint;
+
+	/**
+	 * Which API service endpoints 
+	 */
+	private String facing = "public"; // "admin", "public", or "internal"
+
 	
 	/**
 	 * Enable debug logging
@@ -83,21 +94,23 @@ public class Cli
 		Cli app = new Cli();
     	app.parseOptions(args);
 
-    	System.out.println("User " + app.username);
-    	System.out.println("Tenant " + app.tenantName);
-    	System.out.println("Password " + app.password);
-    	System.out.println("Endpoint " + app.apiEndpoint);
-    	System.out.println("Debug " + app.debug);
+    	System.out.println("API Endpoint: " + app.apiEndpoint);
+    	System.out.println("User:         " + app.username);
+    	System.out.println("Tenant:       " + app.tenantName);
+    	System.out.println("Password:     " + app.password);
+    	System.out.println("API Facing:   " + app.facing);
+    	System.out.println("Debug:        " + app.debug);
 
     	app.run();
     }
     
     private void parseOptions( String[] args ) {
     	Options options = new Options();
+    	options.addOption("a", "api", true, "Keystone Admin API endpoint");
     	options.addOption("u", "user", true, "Username");
     	options.addOption("t", "tenant", true, "Tenant Name");
     	options.addOption("p", "password", true, "Password");
-    	options.addOption("a", "api", true, "Keystone Admin API endpoint");
+    	options.addOption("f", "facing", true, "API facing endpoints (\"admin\", \"internal\", or default of \"public\")");
     	options.addOption("d", "debug", false, "Enable debug logging");
     	
     	CommandLineParser parser = new PosixParser();
@@ -130,6 +143,10 @@ public class Cli
     		apiEndpoint = cmd.getOptionValue("a");
         }
     	
+    	if ( cmd.hasOption("f") ) {  
+    		facing = cmd.getOptionValue("f");
+        }
+
     	if ( cmd.hasOption("d")) {
     		debug = true;
     	}
@@ -142,9 +159,13 @@ public class Cli
     	init();
     	showAllTenants();
     	showAllUsers();
-    	showAllInstances();
+    	showAllFlavors();
+    	showAllImages();
     	showAllHosts();
     	showAllHypervisors();
+    	showAllInstances();
+    	
+    	System.out.println("Success :-)");
     }
     
     private void printJson(Object obj) {
@@ -177,7 +198,7 @@ public class Cli
 
 		// Set the Keystone Client Resource to use token when communicating with keystone
 		keystone.setTokenProvider(new OpenStackSimpleTokenProvider(access.getToken().getId()));
-
+		
 		// List services
 		System.out.println("\n\nServices:");
 		Services services = keystone.services().list().execute();
@@ -247,15 +268,38 @@ public class Cli
 			return null;	// Our user may not have access to this tenant
 		}
 		String region = null; // Don't care which region
-		String facing = "admin"; // "admin", "public", or "internal"
 		
 		// Find the appropriate Nova endpoint from the access credentials
 		// NOTE: the Nova endpoint is specific to the tenant used to authenticate - cannot see compute resources from other tenants!!!
-		String novaApiEndpoint = KeystoneUtils.findEndpointURL(access.getServiceCatalog(), "compute", region, facing);
-		Nova nova = new Nova(novaApiEndpoint, connector);
+		String apiEndpoint = KeystoneUtils.findEndpointURL(access.getServiceCatalog(), "compute", region, facing);
+		Nova nova = new Nova(apiEndpoint, connector);
 		nova.setTokenProvider(new OpenStackSimpleTokenProvider(access.getToken().getId()));		
 
 		return nova;
+	}
+	
+	/**
+	 * Create a Glance Client Resource by asking Keystone
+	 * 
+	 * @return Glance
+	 */
+	private Glance createGlanceClient() {
+		Access access = getAccess();
+		String region = null; // Don't care which region
+		
+		// Find the appropriate Glance endpoint from the access credentials
+		String apiEndpoint = KeystoneUtils.findEndpointURL(access.getServiceCatalog(), "image", region, facing);
+
+		if (!apiEndpoint.endsWith("/v1") && !apiEndpoint.endsWith("/v1/") &&
+				!apiEndpoint.endsWith("/v2") && !apiEndpoint.endsWith("/v2/")) {
+			// FIXME: Why do I need to explicitly add an API version!?
+			// Without this a 300 Multiple Choices error is returned
+			apiEndpoint += "/v1";
+		}
+		Glance glance = new Glance(apiEndpoint, connector);
+		glance.setTokenProvider(new OpenStackSimpleTokenProvider(access.getToken().getId()));		
+
+		return glance;
 	}
 	
 	private void showAllTenants() {
@@ -274,27 +318,21 @@ public class Cli
 		}
 	}
 	
-	private void showAllInstances() {
-		Boolean detail = true; // Access detailed view of Compute resources
-
+	private void showAllFlavors() {
+		System.out.println("\n\nFlavors:\n");
 		Nova nova = createNovaClient();
-
-		System.out.println("\n\nLogin Token's Tenant's Instances (\"" + tenantName + "\"):");
-		Servers instances = nova.servers().list(detail).execute();
-		for (Server instance : instances) {
-			System.out.println("  " + instance.getId() + ", " + instance.getName() + ", " + instance.getHost());
+		Flavors flavors = nova.flavors().list(true/*detail*/).execute();
+		for (Flavor flavor : flavors) {
+			printJson(flavor);
 		}
-
-		Tenants tenants = keystone.tenants().list().execute();
-		for (Tenant tenant : tenants) {
-			nova = createNovaClient(tenant);
-			if (nova == null) continue;
-			
-			System.out.println("\n\nInstances for tenant \"" + tenant.getName() + "\":");
-			instances = nova.servers().list(detail).execute();
-			for (Server instance : instances) {
-				printJson(instance);
-			}
+	}
+	
+	private void showAllImages() {
+		System.out.println("\n\nImages:\n");
+		Glance glance = createGlanceClient();
+		Images images = glance.images().list(true/*detail*/).execute();
+		for (Image image : images) {
+			printJson(image);
 		}
 	}
 
@@ -316,6 +354,30 @@ public class Cli
 		Hypervisors hypervisors = hypervisorsList.execute();
 		for (Hypervisor hypervisor : hypervisors) {
 			printJson(hypervisor);
+		}
+	}
+
+	private void showAllInstances() {
+		Boolean detail = true; // Access detailed view of Compute resources
+
+		Nova nova = createNovaClient();
+
+		System.out.println("\n\nLogin Token's Tenant's Instances (\"" + tenantName + "\"):");
+		Servers instances = nova.servers().list(detail).execute();
+		for (Server instance : instances) {
+			System.out.println("  " + instance.getId() + ", " + instance.getName() + ", " + instance.getHost());
+		}
+
+		Tenants tenants = keystone.tenants().list().execute();
+		for (Tenant tenant : tenants) {
+			nova = createNovaClient(tenant);
+			if (nova == null) continue;
+
+			System.out.println("\n\nInstances for tenant \"" + tenant.getName() + "\":");
+			instances = nova.servers().list(detail).execute();
+			for (Server instance : instances) {
+				printJson(instance);
+			}
 		}
 	}
 }

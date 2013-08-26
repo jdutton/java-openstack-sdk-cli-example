@@ -28,7 +28,7 @@ Run the executable jar, specifying the keystone user, tenant, password, and API 
 example:
 
     java -jar target/java-openstack-sdk-cli-example-*-with-dependencies.jar -a
-    http://192.168.27.100:35357/v2.0/
+    http://192.168.27.100:35357/v2.0/ -p adminpasswd --debug
 
 Arguments include:
 
@@ -36,7 +36,9 @@ Arguments include:
  * `-u` or `--user` for Keystone username with admin privileges (defaults to `admin`)
  * `-t` or `--tenant` for the Tenant name that the user is logging into (defaults to `admin`)
  * `-p` or `--password` for the user's password (defaults to `password`)
- * `-d` or `--debug` to enable debug logging of HTTP client requests to the API
+ * `-f` or `--facing` to set the API facing endpoints (`admin`, `internal`, or default `public`)
+ * `-d` or `--debug` to enable debug logging of HTTP client requests to the API (pretty verbose, but
+   helpful to debug and get insight into API calls)
  
 For example:
     java -jar target/java-openstack-sdk-cli-example-*-with-dependencies.jar -a
