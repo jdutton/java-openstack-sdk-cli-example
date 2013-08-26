@@ -2,7 +2,7 @@ java-openstack-sdk-cli-example
 ==============================
 
 Example app to help people get started using the
-[java-openstack-sdk](https://github.com/https://github.com/woorea/openstack-java-sdk) Java binding
+[openstack-java-sdk](https://github.com/https://github.com/woorea/openstack-java-sdk) Java binding
 for the OpenStack APIs.
 
 All it does is probe an OpenStack using admin user credentials and a pointer to the Keystone API,
@@ -36,6 +36,7 @@ Arguments include:
  * `-u` or `--user` for Keystone username with admin privileges (defaults to `admin`)
  * `-t` or `--tenant` for the Tenant name that the user is logging into (defaults to `admin`)
  * `-p` or `--password` for the user's password (defaults to `password`)
+ * `-d` or `--debug` to enable debug logging of HTTP client requests to the API
  
 For example:
     java -jar target/java-openstack-sdk-cli-example-*-with-dependencies.jar -a
