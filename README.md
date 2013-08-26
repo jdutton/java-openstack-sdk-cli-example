@@ -1,6 +1,8 @@
 java-openstack-sdk-cli-example
 ==============================
 
+[![Build Status](https://travis-ci.org/jdutton/java-openstack-sdk-cli-example.png)](https://travis-ci.org/jdutton/java-openstack-sdk-cli-example)
+
 Example app to help people get started using the
 [openstack-java-sdk](https://github.com/https://github.com/woorea/openstack-java-sdk) Java binding
 for the OpenStack APIs.
