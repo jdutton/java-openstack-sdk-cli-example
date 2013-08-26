@@ -44,9 +44,11 @@ public class JerseyConnector implements OpenStackClientConnector {
 	
 	protected Client client = null;
     protected boolean logPassword;
-    private JerseyLoggingFilter logger = new JerseyLoggingFilter(Logger.getLogger("os"));
+    private JerseyLoggingFilter logger = null;
 
-	public JerseyConnector() {
+	public JerseyConnector(Logger logger) {
+		if (logger != null)
+			this.logger = new JerseyLoggingFilter(logger);
 		ClientConfig clientConfig = new DefaultClientConfig();
 		clientConfig.getClasses().add(JacksonJaxbJsonProvider.class);
 		clientConfig.getClasses().add(OpenStackObjectMapper.class);
@@ -61,7 +63,8 @@ public class JerseyConnector implements OpenStackClientConnector {
 				target = target.queryParam(entry.getKey(), String.valueOf(o));
 			}
 		}
-		target.addFilter(logger);
+		if (logger != null)
+			target.addFilter(logger);
 		MultivaluedMap<String, Object> headers = new OutBoundHeaders();
 		for(Map.Entry<String, List<Object>> h : request.headers().entrySet()) {
 			for(Object v : h.getValue()) {

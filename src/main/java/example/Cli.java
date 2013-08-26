@@ -1,6 +1,11 @@
 package example;
 
+import java.io.IOException;
+import java.util.logging.Logger;
+
 import org.apache.commons.cli.*;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.map.ObjectWriter;
 
 import com.woorea.openstack.base.client.HttpMethod;
 import com.woorea.openstack.base.client.OpenStackClientConnector;
@@ -55,11 +60,19 @@ public class Cli
 	 * 
 	 */
 	private String apiEndpoint;
+	
+	/**
+	 * Enable debug logging
+	 */
+	private boolean debug = false;
 
 	// Client objects shared by multiple methods
 	private OpenStackClientConnector connector;
 	private Access access;
 	private Keystone keystone;
+	
+	private ObjectMapper mapper = new ObjectMapper();
+
 	
 	/**
 	 * 
@@ -74,6 +87,7 @@ public class Cli
     	System.out.println("Tenant " + app.tenantName);
     	System.out.println("Password " + app.password);
     	System.out.println("Endpoint " + app.apiEndpoint);
+    	System.out.println("Debug " + app.debug);
 
     	app.run();
     }
@@ -84,6 +98,7 @@ public class Cli
     	options.addOption("t", "tenant", true, "Tenant Name");
     	options.addOption("p", "password", true, "Password");
     	options.addOption("a", "api", true, "Keystone Admin API endpoint");
+    	options.addOption("d", "debug", false, "Enable debug logging");
     	
     	CommandLineParser parser = new PosixParser();
     	CommandLine cmd = null;
@@ -115,22 +130,40 @@ public class Cli
     		apiEndpoint = cmd.getOptionValue("a");
         }
     	
+    	if ( cmd.hasOption("d")) {
+    		debug = true;
+    	}
+    	
     	if (err)
     		System.exit(1);
     }
     
     private void run() {
     	init();
-    	showAllUsers();
     	showAllTenants();
+    	showAllUsers();
     	showAllInstances();
     	showAllHosts();
     	showAllHypervisors();
     }
+    
+    private void printJson(Object obj) {
+		try {
+			ObjectWriter writer = mapper.writer().withDefaultPrettyPrinter();
+		    System.out.println(writer.writeValueAsString(obj));			
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+    	
+    }
 
     private void init() {
     	// Create the REST Client Connector, which also handles the JSON API serialization
-    	connector = new JerseyConnector();
+    	Logger logger = null;
+    	if (debug)
+    		logger = Logger.getLogger("os");
+    	connector = new JerseyConnector(logger);
     	
     	// Create the Keystone Client Resource
 		keystone = new Keystone(apiEndpoint, connector);
@@ -146,14 +179,14 @@ public class Cli
 		keystone.setTokenProvider(new OpenStackSimpleTokenProvider(access.getToken().getId()));
 
 		// List services
-		System.out.println("Services:");
+		System.out.println("\n\nServices:");
 		Services services = keystone.services().list().execute();
 		for (Service service : services) {
 			System.out.println("  " + service.getId() + ", " + service.getName() + ", " + service.getDescription());
 		}
 
 		// List endpoints, which map to services by the service ID
-		System.out.println("Endpoints:");
+		System.out.println("\n\nEndpoints:");
 		Endpoints endpoints = keystone.endpoints().list().execute();
 		for (Endpoint endpoint : endpoints) {
 			System.out.println("  " + endpoint.getServiceId() + ", " + endpoint.getAdminURL() + ", " + endpoint.getPublicURL());
@@ -169,12 +202,12 @@ public class Cli
     }
 
     private Access getAccess(Tenant tenant) {
-    	if (access.getToken().getTenant().getId() == tenant.getId()) {
-    		return access;
+    	if (getAccess().getToken().getTenant().getId() == tenant.getId()) {
+    		return getAccess();
     	}
 
     	// Use our existing token to authenticate with Keystone to create new tenant-specific tokens
-		Authentication tokenAuth = new TokenAuthentication(access.getToken().getId());
+		Authentication tokenAuth = new TokenAuthentication(getAccess().getToken().getId());
 
 		// Now, *try* to create a NEW token on this tenant.
 		// NOTE: even "admin" users are not authorized on every tenant, though
@@ -185,7 +218,7 @@ public class Cli
 					.withTenantId(tenant.getId())
 					.execute();
 		} catch (OpenStackResponseException err) {
-			System.out.println("Failed to access tenant " + tenant.getName());
+			System.out.println("\nFailed to access tenant \"" + tenant.getName() + "\" - user must not have authorization for this tenant!");
 			return null;  // Cannot access nova
 		}
 	}
@@ -195,7 +228,7 @@ public class Cli
 	 * @return Nova
 	 */
 	private Nova createNovaClient() {
-		Tenant tenant = access.getToken().getTenant();
+		Tenant tenant = getAccess().getToken().getTenant();
 		return createNovaClient(tenant);
 	}
 	
@@ -225,28 +258,28 @@ public class Cli
 		return nova;
 	}
 	
-	private void showAllUsers() {
-		System.out.println("\nUsers...\n");
-		Users users = keystone.users().list().execute();
-		for (User user: users) {
-			System.out.println("  " + user.getId() + ", " + user.getName() + ", " + user.getUsername() + ", " + user.getEmail());
-		}
-	}
-	
 	private void showAllTenants() {
-		System.out.println("\nTenants:");
+		System.out.println("\n\nTenants:");
 		Tenants tenants = keystone.tenants().list().execute();
 		for (Tenant tenant : tenants) {
-			System.out.println("  " + tenant.getId() + ", " + tenant.getName() + ", " + tenant.getDescription());
+			System.out.println("  " + tenant.getId() + ", " + tenant.getName() + ", " + tenant.getDescription() + ", " + (tenant.getEnabled() ? "ENABLED" : "DISABLED"));
 		}
 	}
 
+	private void showAllUsers() {
+		System.out.println("\n\nUsers:\n");
+		Users users = keystone.users().list().execute();
+		for (User user: users) {
+			printJson(user);
+		}
+	}
+	
 	private void showAllInstances() {
 		Boolean detail = true; // Access detailed view of Compute resources
 
 		Nova nova = createNovaClient();
 
-		System.out.println("\nMy Own Tenant's Instances:");
+		System.out.println("\n\nLogin Token's Tenant's Instances (\"" + tenantName + "\"):");
 		Servers instances = nova.servers().list(detail).execute();
 		for (Server instance : instances) {
 			System.out.println("  " + instance.getId() + ", " + instance.getName() + ", " + instance.getHost());
@@ -257,30 +290,32 @@ public class Cli
 			nova = createNovaClient(tenant);
 			if (nova == null) continue;
 			
-			System.out.println("\nInstances for tenant " + tenant.getName() + ":");
+			System.out.println("\n\nInstances for tenant \"" + tenant.getName() + "\":");
 			instances = nova.servers().list(detail).execute();
 			for (Server instance : instances) {
-				System.out.println("  " + instance.getId() + ", " + instance.getName() + ", " + instance.getHost());
+				printJson(instance);
 			}
 		}
 	}
 
 	private void showAllHosts() {
-		System.out.println("\nHosts:");
+		System.out.println("\n\nHosts:");
 		HostsExtension hostsResource = new HostsExtension(createNovaClient());
 		Hosts hosts = hostsResource.list().execute();
 		for (Host host : hosts) {
-			System.out.println("  " + host.getHostName() + ", " + host.getService());
+			printJson(host);
 		}
 	}
 
 	private void showAllHypervisors() {
-		System.out.println("\nHypervisors:");
+		System.out.println("\n\nHypervisors:");
 		Nova nova = createNovaClient();
 		
 		// No Hypervisors resource, so make an ad-hoc one
-		OpenStackRequest<Hosts> hypervisorsList = new OpenStackRequest<Hosts>(nova, HttpMethod.GET, "/os-hypervisors/detail", null, Hosts.class);
-		
-		hypervisorsList.execute();
+		OpenStackRequest<Hypervisors> hypervisorsList = new OpenStackRequest<Hypervisors>(nova, HttpMethod.GET, "/os-hypervisors/detail", null, Hypervisors.class);		
+		Hypervisors hypervisors = hypervisorsList.execute();
+		for (Hypervisor hypervisor : hypervisors) {
+			printJson(hypervisor);
+		}
 	}
 }

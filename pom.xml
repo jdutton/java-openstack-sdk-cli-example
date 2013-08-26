@@ -113,6 +113,7 @@
 				<arguments>
 					<argument>-a</argument>
 					<argument>http://192.168.27.100:35357/v2.0/</argument>
+					<!-- <argument>-d</argument> -->
 				</arguments>
 			</configuration>
 		</plugin>
